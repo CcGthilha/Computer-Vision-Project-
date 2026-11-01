@@ -1,26 +1,23 @@
-<header class="topbar">
-  <div class="brand">
-    <span class="logo" aria-hidden="true">🍎</span>
-    <div>
-      <h1>Fruit Freshness Detection</h1>
-      <p>HSV Image Processing + Random Forest · ประมวลผลในเบราว์เซอร์ทั้งหมด</p>
-    </div>
-  </div>
-  <span class="chip" [class.ok]="model.status() === 'ready'" [class.err]="model.status() === 'error'">
+<header class="header">
+  <h1>Fruit Freshness Detection</h1>
+  <p>ระบบตรวจความสดของผลไม้ (Fresh / Rotten) ด้วย HSV Histogram + Random Forest</p>
+  <p class="status">
+    สถานะโมเดล:
     @switch (model.status()) {
-      @case ('ready') { ● โมเดลพร้อมใช้งาน }
-      @case ('loading') { ○ กำลังโหลดโมเดล… }
-      @case ('error') { ✕ โหลดโมเดลไม่สำเร็จ }
+      @case ('ready') { <span class="ok">พร้อมใช้งาน</span> }
+      @case ('loading') { <span>กำลังโหลด...</span> }
+      @case ('error') { <span class="err">โหลดไม่สำเร็จ</span> }
     }
-  </span>
+  </p>
 </header>
 
-<main class="layout">
-  <!-- ================= Input ================= -->
-  <section class="card input-card">
-    <div class="tabs" role="tablist">
-      <button role="tab" [class.active]="mode() === 'upload'" (click)="switchMode('upload')">อัปโหลดภาพ</button>
-      <button role="tab" [class.active]="mode() === 'camera'" (click)="switchMode('camera')">กล้อง</button>
+<main class="container">
+  <!-- Input -->
+  <section>
+    <h2>1. เลือกภาพ</h2>
+    <div class="mode">
+      <button [class.selected]="mode() === 'upload'" (click)="switchMode('upload')">อัปโหลดภาพ</button>
+      <button [class.selected]="mode() === 'camera'" (click)="switchMode('camera')">ใช้กล้อง</button>
     </div>
 
     @if (mode() === 'upload') {
@@ -32,152 +29,145 @@
         (drop)="onDrop($event)"
       >
         <input type="file" accept="image/*" multiple (change)="onFileInput($event)" hidden />
-        <span class="drop-icon" aria-hidden="true">⬆</span>
-        <strong>ลากภาพผลไม้มาวาง หรือคลิกเพื่อเลือกไฟล์</strong>
-        <span class="muted">เลือกได้หลายภาพพร้อมกัน · ใช้ได้ดีที่สุดกับภาพผลไม้บนพื้นหลังสีอ่อน</span>
+        คลิกเพื่อเลือกไฟล์ หรือลากภาพมาวางที่นี่ (เลือกได้หลายภาพ)
+        <small>ภาพผลไม้บนพื้นหลังสีอ่อนจะได้ผลดีที่สุด</small>
       </label>
     } @else {
-      <div class="camera">
-        @if (cameraOn()) {
-          <div class="video-wrap">
-            <video #video playsinline muted></video>
-            <div class="crop-guide" aria-hidden="true"></div>
-          </div>
-          <div class="row">
-            <button class="primary" (click)="capture()" [disabled]="busy() || live()">ถ่ายและวิเคราะห์</button>
-            <label class="toggle">
-              <input type="checkbox" [checked]="live()" (change)="setLive($any($event.target).checked)" />
-              วิเคราะห์ต่อเนื่อง (Live)
-            </label>
-            <button class="ghost" (click)="stopCamera()">ปิดกล้อง</button>
-          </div>
-        } @else {
-          <div class="camera-off">
-            <p>ใช้กล้องเพื่อตรวจผลไม้แบบ real-time (ระบบครอปภาพตรงกลางเป็นสี่เหลี่ยมจัตุรัส)</p>
-            <button class="primary" (click)="startCamera()">เปิดกล้อง</button>
-          </div>
-        }
-      </div>
+      @if (cameraOn()) {
+        <div class="video-wrap">
+          <video #video playsinline muted></video>
+          <div class="crop-guide"></div>
+        </div>
+        <p class="note">ระบบจะใช้เฉพาะส่วนในกรอบสี่เหลี่ยม</p>
+        <div class="actions">
+          <button (click)="capture()" [disabled]="busy() || live()">ถ่ายภาพและตรวจ</button>
+          <label>
+            <input type="checkbox" [checked]="live()" (change)="setLive($any($event.target).checked)" />
+            ตรวจต่อเนื่อง
+          </label>
+          <button (click)="stopCamera()">ปิดกล้อง</button>
+        </div>
+      } @else {
+        <button (click)="startCamera()">เปิดกล้อง</button>
+      }
     }
 
     @if (busy()) {
-      <p class="muted small">กำลังประมวลผล…</p>
+      <p class="note">กำลังประมวลผล...</p>
     }
     @if (message(); as msg) {
-      <p class="alert">{{ msg }}</p>
+      <p class="error">{{ msg }}</p>
     }
     @if (model.error(); as err) {
-      <p class="alert">{{ err }}</p>
+      <p class="error">{{ err }}</p>
     }
   </section>
 
-  <!-- ================= Result ================= -->
-  <section class="card result-card">
+  <!-- Result -->
+  <section>
+    <h2>2. ผลการตรวจ</h2>
     @if (current(); as a) {
-      <div class="verdict" [class.fresh]="a.prediction.label === 'fresh'" [class.rotten]="a.prediction.label === 'rotten'">
-        <div>
-          <span class="verdict-label">{{ a.prediction.label === 'fresh' ? 'Fresh · สด' : 'Rotten · เน่า' }}</span>
-          <span class="muted small">{{ a.name }}</span>
-        </div>
-        <div class="confidence">
-          <strong>{{ a.prediction.confidence | percent: '1.1-1' }}</strong>
-          <span class="muted small">ความมั่นใจ</span>
-        </div>
+      <div class="result" [class.fresh]="a.prediction.label === 'fresh'" [class.rotten]="a.prediction.label === 'rotten'">
+        <div class="result-label">{{ a.prediction.label === 'fresh' ? 'Fresh (สด)' : 'Rotten (เน่า)' }}</div>
+        <div>ความมั่นใจ {{ a.prediction.confidence | percent: '1.1-1' }}</div>
+        <small>{{ a.name }}</small>
       </div>
 
-      <div class="prob-bar" aria-label="ความน่าจะเป็น">
-        <div class="prob fresh" [style.width.%]="a.prediction.probabilities.fresh * 100"></div>
-        <div class="prob rotten" [style.width.%]="a.prediction.probabilities.rotten * 100"></div>
-      </div>
-      <div class="prob-legend small">
-        <span><i class="dot fresh"></i>Fresh {{ a.prediction.probabilities.fresh | percent: '1.1-1' }}</span>
-        <span><i class="dot rotten"></i>Rotten {{ a.prediction.probabilities.rotten | percent: '1.1-1' }}</span>
-      </div>
+      <table class="probs">
+        <tr>
+          <td>Fresh</td>
+          <td class="bar-cell"><div class="bar fresh" [style.width.%]="a.prediction.probabilities.fresh * 100"></div></td>
+          <td class="num">{{ a.prediction.probabilities.fresh | percent: '1.1-1' }}</td>
+        </tr>
+        <tr>
+          <td>Rotten</td>
+          <td class="bar-cell"><div class="bar rotten" [style.width.%]="a.prediction.probabilities.rotten * 100"></div></td>
+          <td class="num">{{ a.prediction.probabilities.rotten | percent: '1.1-1' }}</td>
+        </tr>
+      </table>
 
-      <h2>ขั้นตอน Image Processing</h2>
+      <h3>ขั้นตอน Image Processing</h3>
       <div class="steps">
         <figure>
           <canvas #originalCanvas [width]="imageSize" [height]="imageSize"></canvas>
-          <figcaption>1. Resize 128×128</figcaption>
+          <figcaption>Resize 128x128</figcaption>
         </figure>
         <figure>
           <canvas #maskCanvas [width]="imageSize" [height]="imageSize"></canvas>
-          <figcaption>2. Otsu (S) + Morphology</figcaption>
+          <figcaption>Otsu (S) + Morphology</figcaption>
         </figure>
         <figure>
           <canvas #maskedCanvas [width]="imageSize" [height]="imageSize"></canvas>
-          <figcaption>3. ผลไม้ที่แยกได้</figcaption>
+          <figcaption>Mask ผลไม้</figcaption>
         </figure>
       </div>
-      <label class="toggle small">
+      <label class="note">
         <input type="checkbox" [checked]="highlightDark()" (change)="highlightDark.set($any($event.target).checked)" />
-        ไฮไลต์บริเวณสีคล้ำ (V &lt; 90) เป็นสีม่วง
+        แสดงบริเวณสีคล้ำ (V &lt; 90) เป็นสีม่วง
       </label>
 
-      <h2>สถิติของภาพ</h2>
-      <div class="stats">
-        <div><span>พื้นที่ผลไม้</span><strong>{{ a.stats.fruitArea | number: '1.1-1' }}%</strong></div>
-        <div><span>บริเวณสีคล้ำ</span><strong>{{ a.stats.darkArea | number: '1.1-1' }}%</strong></div>
-        <div><span>Otsu threshold (S)</span><strong>{{ a.stats.otsuThreshold }}</strong></div>
-        <div><span>Mean H / S / V</span><strong>{{ a.stats.meanH | number: '1.0-0' }} / {{ a.stats.meanS | number: '1.0-0' }} / {{ a.stats.meanV | number: '1.0-0' }}</strong></div>
-        <div><span>เวลาประมวลผล</span><strong>{{ a.elapsed | number: '1.0-0' }} ms</strong></div>
-        <div><span>Feature</span><strong>8,192 bins</strong></div>
+      <div class="two-col">
+        <div>
+          <h3>ข้อมูลของภาพ</h3>
+          <table class="info">
+            <tr><th>พื้นที่ผลไม้</th><td>{{ a.stats.fruitArea | number: '1.1-1' }} %</td></tr>
+            <tr><th>บริเวณสีคล้ำ</th><td>{{ a.stats.darkArea | number: '1.1-1' }} %</td></tr>
+            <tr><th>Otsu threshold (S)</th><td>{{ a.stats.otsuThreshold }}</td></tr>
+            <tr><th>ค่าเฉลี่ย H / S / V</th><td>{{ a.stats.meanH | number: '1.0-0' }} / {{ a.stats.meanS | number: '1.0-0' }} / {{ a.stats.meanV | number: '1.0-0' }}</td></tr>
+            <tr><th>เวลาประมวลผล</th><td>{{ a.elapsed | number: '1.0-0' }} ms</td></tr>
+          </table>
+        </div>
+        <div>
+          <h3>Hue Histogram (เฉพาะผลไม้)</h3>
+          <canvas #hueCanvas class="hue-chart"></canvas>
+          <div class="hue-axis"><span>0</span><span>H</span><span>179</span></div>
+        </div>
       </div>
-
-      <h2>Hue Histogram ของผลไม้</h2>
-      <canvas #hueCanvas class="hue-chart"></canvas>
-      <div class="hue-axis small muted"><span>0°</span><span>Hue</span><span>360°</span></div>
     } @else {
-      <div class="empty">
-        <span aria-hidden="true">🍊</span>
-        <p>อัปโหลดภาพหรือเปิดกล้องเพื่อเริ่มตรวจความสดของผลไม้</p>
-      </div>
+      <p class="note">ยังไม่มีผล กรุณาเลือกภาพหรือเปิดกล้อง</p>
     }
   </section>
 
-  <!-- ================= Session statistics ================= -->
-  <section class="card history-card">
-    <div class="row between">
-      <h2>สถิติการตรวจ</h2>
-      <div class="row">
-        <button class="ghost" (click)="exportCsv()" [disabled]="!history().length">Export CSV</button>
-        <button class="ghost" (click)="clearHistory()" [disabled]="!history().length">ล้าง</button>
-      </div>
+  <!-- History -->
+  <section>
+    <h2>3. สรุปผลการตรวจ</h2>
+    @let s = summary();
+    <p>
+      ตรวจแล้ว <b>{{ s.total }}</b> ภาพ |
+      Fresh <b class="fresh-text">{{ s.fresh }}</b> |
+      Rotten <b class="rotten-text">{{ s.rotten }}</b> |
+      ความมั่นใจเฉลี่ย <b>{{ s.avgConfidence | percent: '1.0-0' }}</b>
+    </p>
+    <div class="actions">
+      <button (click)="exportCsv()" [disabled]="!history().length">ดาวน์โหลด CSV</button>
+      <button (click)="clearHistory()" [disabled]="!history().length">ล้างข้อมูล</button>
     </div>
 
-    @let s = summary();
-    <div class="kpis">
-      <div><span>ตรวจแล้ว</span><strong>{{ s.total }}</strong></div>
-      <div class="fresh"><span>Fresh</span><strong>{{ s.fresh }}</strong></div>
-      <div class="rotten"><span>Rotten</span><strong>{{ s.rotten }}</strong></div>
-      <div><span>ความมั่นใจเฉลี่ย</span><strong>{{ s.avgConfidence | percent: '1.0-0' }}</strong></div>
-    </div>
-    @if (s.total) {
-      <div class="ratio-bar">
-        <div class="prob fresh" [style.width.%]="s.freshRatio * 100"></div>
-        <div class="prob rotten" [style.width.%]="(1 - s.freshRatio) * 100"></div>
+    @if (history().length) {
+      <div class="table-wrap">
+        <table class="history">
+          <thead>
+            <tr><th>#</th><th>ภาพ</th><th>ชื่อไฟล์</th><th>ที่มา</th><th>ผล</th><th>ความมั่นใจ</th><th>เวลา (ms)</th></tr>
+          </thead>
+          <tbody>
+            @for (a of history(); track a.id; let i = $index) {
+              <tr [class.selected]="current()?.id === a.id" (click)="select(a)">
+                <td>{{ history().length - i }}</td>
+                <td><img [src]="a.thumbnail" alt="" width="36" height="36" /></td>
+                <td class="name">{{ a.name }}</td>
+                <td>{{ a.source === 'camera' ? 'กล้อง' : 'อัปโหลด' }}</td>
+                <td [class.fresh-text]="a.prediction.label === 'fresh'" [class.rotten-text]="a.prediction.label === 'rotten'">{{ a.prediction.label }}</td>
+                <td>{{ a.prediction.confidence | percent: '1.0-0' }}</td>
+                <td>{{ a.elapsed | number: '1.0-0' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
       </div>
     }
-
-    <ul class="history">
-      @for (a of history(); track a.id) {
-        <li [class.selected]="current()?.id === a.id" (click)="select(a)">
-          <img [src]="a.thumbnail" alt="" width="44" height="44" />
-          <div class="grow">
-            <span class="name">{{ a.name }}</span>
-            <span class="muted small">{{ a.source === 'camera' ? 'กล้อง' : 'อัปโหลด' }} · {{ a.elapsed | number: '1.0-0' }} ms</span>
-          </div>
-          <span class="tag" [class.fresh]="a.prediction.label === 'fresh'" [class.rotten]="a.prediction.label === 'rotten'">
-            {{ a.prediction.label }} {{ a.prediction.confidence | percent: '1.0-0' }}
-          </span>
-        </li>
-      } @empty {
-        <li class="muted small no-hover">ยังไม่มีประวัติการตรวจ</li>
-      }
-    </ul>
   </section>
 </main>
 
-<footer class="muted small">
-  Image Processing and Computer Vision · Resize → HSV → Otsu Threshold → Morphology → HSV Histogram (32×32×8) → Random Forest (ONNX)
+<footer>
+  วิชา Image Processing and Computer Vision
 </footer>

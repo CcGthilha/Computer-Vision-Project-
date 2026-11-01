@@ -264,9 +264,7 @@ function drawHueHistogram(canvas: HTMLCanvasElement, hist: number[]) {
   const bw = w / H_BINS;
   hist.forEach((v, i) => {
     const bh = (v / max) * (h - 4);
-    ctx.fillStyle = `hsl(${((i + 0.5) * 360) / H_BINS}, 75%, 50%)`;
-    ctx.beginPath();
-    ctx.roundRect(i * bw + 1, h - bh, bw - 2, bh, [2, 2, 0, 0]);
-    ctx.fill();
+    ctx.fillStyle = `hsl(${((i + 0.5) * 360) / H_BINS}, 70%, 50%)`;
+    ctx.fillRect(i * bw + 1, h - bh, bw - 2, bh);
   });
 }
