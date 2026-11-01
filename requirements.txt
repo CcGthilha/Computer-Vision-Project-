@@ -4,3 +4,6 @@ numpy
 opencv-python-headless
 pillow
 matplotlib
+skl2onnx
+onnx
+onnxruntime
