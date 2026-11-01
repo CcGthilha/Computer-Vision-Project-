@@ -1,163 +1,181 @@
 <header class="header">
-  <h1>Fruit Freshness Detection</h1>
-  <p>ระบบตรวจความสดของผลไม้ (Fresh / Rotten) ด้วย HSV Histogram + Random Forest</p>
-  <p class="status">
-    สถานะโมเดล:
-    @switch (model.status()) {
-      @case ('ready') { <span class="ok">พร้อมใช้งาน</span> }
-      @case ('loading') { <span>กำลังโหลด...</span> }
-      @case ('error') { <span class="err">โหลดไม่สำเร็จ</span> }
-    }
-  </p>
+  <div class="header-inner">
+    <div>
+      <h1>Fruit Freshness Detection</h1>
+      <p>ระบบตรวจความสดของผลไม้ (Fresh / Rotten) ด้วย HSV Histogram + Random Forest</p>
+    </div>
+    <div class="status" [class.ok]="model.status() === 'ready'" [class.err]="model.status() === 'error'">
+      @switch (model.status()) {
+        @case ('ready') { โมเดลพร้อมใช้งาน }
+        @case ('loading') { กำลังโหลดโมเดล... }
+        @case ('error') { โหลดโมเดลไม่สำเร็จ }
+      }
+    </div>
+  </div>
 </header>
 
 <main class="container">
-  <!-- Input -->
-  <section>
-    <h2>1. เลือกภาพ</h2>
-    <div class="mode">
-      <button [class.selected]="mode() === 'upload'" (click)="switchMode('upload')">อัปโหลดภาพ</button>
-      <button [class.selected]="mode() === 'camera'" (click)="switchMode('camera')">ใช้กล้อง</button>
-    </div>
-
-    @if (mode() === 'upload') {
-      <label
-        class="dropzone"
-        [class.dragging]="dragging()"
-        (dragover)="onDragOver($event)"
-        (dragleave)="dragging.set(false)"
-        (drop)="onDrop($event)"
-      >
-        <input type="file" accept="image/*" multiple (change)="onFileInput($event)" [disabled]="busy()" hidden />
-        คลิกเพื่อเลือกไฟล์ หรือลากภาพมาวางที่นี่ (เลือกได้หลายภาพ)
-        <small>ภาพผลไม้ 1 ผลบนพื้นหลังสีอ่อนจะได้ผลดีที่สุด</small>
-      </label>
-
-      <p class="samples-title">หรือลองใช้ภาพตัวอย่าง:</p>
-      <div class="samples">
-        @for (s of samples; track s.file) {
-          <button class="sample" (click)="loadSample(s)" [disabled]="busy()" [title]="s.label">
-            <img [src]="'samples/' + s.file" [alt]="s.label" width="64" height="64" />
-            <span>{{ s.label }}</span>
-          </button>
-        }
+  <div class="top-grid">
+    <!-- Input -->
+    <section>
+      <h2><span class="num">1</span> เลือกภาพ</h2>
+      <div class="mode">
+        <button [class.selected]="mode() === 'upload'" (click)="switchMode('upload')">อัปโหลดภาพ</button>
+        <button [class.selected]="mode() === 'camera'" (click)="switchMode('camera')">ใช้กล้อง</button>
       </div>
-    } @else {
-      @if (cameraOn()) {
-        <div class="video-wrap">
-          <video #video playsinline muted></video>
-          <div class="crop-guide"></div>
+
+      @if (mode() === 'upload') {
+        <label
+          class="dropzone"
+          [class.dragging]="dragging()"
+          (dragover)="onDragOver($event)"
+          (dragleave)="dragging.set(false)"
+          (drop)="onDrop($event)"
+        >
+          <input type="file" accept="image/*" multiple (change)="onFileInput($event)" [disabled]="busy()" hidden />
+          <span class="drop-title">คลิกเพื่อเลือกไฟล์ หรือลากภาพมาวางที่นี่</span>
+          <small>รองรับ jpg, png, webp เลือกได้หลายภาพ · ภาพผลไม้ 1 ผลบนพื้นหลังสีอ่อนจะได้ผลดีที่สุด</small>
+        </label>
+
+        <p class="samples-title">หรือลองใช้ภาพตัวอย่าง</p>
+        <div class="samples">
+          @for (s of samples; track s.file) {
+            <button class="sample" (click)="loadSample(s)" [disabled]="busy()" [title]="s.label">
+              <img [src]="'samples/' + s.file" [alt]="s.label" width="64" height="64" />
+              <span>{{ s.label }}</span>
+            </button>
+          }
         </div>
-        <p class="note">วางผลไม้ให้อยู่ในกรอบสีเหลือง ระบบจะใช้เฉพาะส่วนในกรอบ</p>
-        <div class="actions">
-          <button (click)="capture()" [disabled]="busy()">{{ live() ? 'บันทึกผลนี้' : 'ถ่ายภาพและตรวจ' }}</button>
-          <label>
-            <input type="checkbox" [checked]="live()" (change)="setLive($any($event.target).checked)" />
-            ตรวจต่อเนื่อง (ทุก 0.5 วินาที)
-          </label>
-          <button (click)="stopCamera()">ปิดกล้อง</button>
-        </div>
-        @if (live()) {
-          <p class="note">กำลังตรวจต่อเนื่อง ผลด้านล่างจะอัปเดตอัตโนมัติ กด "บันทึกผลนี้" เพื่อเก็บลงตารางสรุป</p>
-        }
       } @else {
-        <p class="note">ต้องอนุญาตให้เบราว์เซอร์ใช้กล้องก่อน</p>
-        <button (click)="startCamera()">เปิดกล้อง</button>
-      }
-    }
-
-    @if (busy()) {
-      <p class="note">กำลังประมวลผล... {{ progress() }}</p>
-    }
-    @if (message(); as msg) {
-      <p class="error">{{ msg }}</p>
-    }
-    @if (model.error(); as err) {
-      <p class="error">{{ err }}</p>
-    }
-  </section>
-
-  <!-- Result -->
-  <section>
-    <h2>2. ผลการตรวจ</h2>
-    @if (current(); as a) {
-      <div class="result" [class.fresh]="a.prediction.label === 'fresh'" [class.rotten]="a.prediction.label === 'rotten'">
-        <div class="result-label">{{ a.prediction.label === 'fresh' ? 'Fresh (สด)' : 'Rotten (เน่า)' }}</div>
-        <div>ความมั่นใจ {{ a.prediction.confidence | percent: '1.1-1' }}</div>
-        <small>{{ a.name }}</small>
-      </div>
-      @if (warning(); as w) {
-        <p class="warning">คำเตือน: {{ w }}</p>
+        @if (cameraOn()) {
+          <div class="video-wrap">
+            <video #video playsinline muted></video>
+            <div class="crop-guide"></div>
+          </div>
+          <p class="note">วางผลไม้ให้อยู่ในกรอบสีเหลือง ระบบจะใช้เฉพาะส่วนในกรอบ</p>
+          <div class="actions">
+            <button class="primary" (click)="capture()" [disabled]="busy()">{{ live() ? 'บันทึกผลนี้' : 'ถ่ายภาพและตรวจ' }}</button>
+            <button (click)="stopCamera()">ปิดกล้อง</button>
+            <label class="check">
+              <input type="checkbox" [checked]="live()" (change)="setLive($any($event.target).checked)" />
+              ตรวจต่อเนื่อง (ทุก 0.5 วินาที)
+            </label>
+          </div>
+          @if (live()) {
+            <p class="note">กำลังตรวจต่อเนื่อง ผลจะอัปเดตอัตโนมัติ กด "บันทึกผลนี้" เพื่อเก็บลงตารางสรุป</p>
+          }
+        } @else {
+          <div class="camera-off">
+            <p>ใช้กล้องของเครื่องถ่ายผลไม้แล้วตรวจได้ทันที<br /><small>ต้องอนุญาตให้เบราว์เซอร์ใช้กล้องก่อน</small></p>
+            <button class="primary" (click)="startCamera()">เปิดกล้อง</button>
+          </div>
+        }
       }
 
-      <table class="probs">
-        <tr>
-          <td>Fresh</td>
-          <td class="bar-cell"><div class="bar fresh" [style.width.%]="a.prediction.probabilities.fresh * 100"></div></td>
-          <td class="num">{{ a.prediction.probabilities.fresh | percent: '1.1-1' }}</td>
-        </tr>
-        <tr>
-          <td>Rotten</td>
-          <td class="bar-cell"><div class="bar rotten" [style.width.%]="a.prediction.probabilities.rotten * 100"></div></td>
-          <td class="num">{{ a.prediction.probabilities.rotten | percent: '1.1-1' }}</td>
-        </tr>
-      </table>
+      @if (busy()) {
+        <p class="note">กำลังประมวลผล... {{ progress() }}</p>
+      }
+      @if (message(); as msg) {
+        <p class="error">{{ msg }}</p>
+      }
+      @if (model.error(); as err) {
+        <p class="error">{{ err }}</p>
+      }
+    </section>
 
-      <h3>ขั้นตอน Image Processing</h3>
-      <div class="steps">
-        <figure>
-          <canvas #originalCanvas [width]="imageSize" [height]="imageSize"></canvas>
-          <figcaption>Resize 128x128</figcaption>
-        </figure>
-        <figure>
-          <canvas #maskCanvas [width]="imageSize" [height]="imageSize"></canvas>
-          <figcaption>Otsu (S) + Morphology</figcaption>
-        </figure>
-        <figure>
-          <canvas #maskedCanvas [width]="imageSize" [height]="imageSize"></canvas>
-          <figcaption>Mask ผลไม้</figcaption>
-        </figure>
-      </div>
-      <label class="note">
-        <input type="checkbox" [checked]="highlightDark()" (change)="highlightDark.set($any($event.target).checked)" />
-        แสดงบริเวณสีคล้ำ (V &lt; 90) เป็นสีม่วง
-      </label>
+    <!-- Result -->
+    <section>
+      <h2><span class="num">2</span> ผลการตรวจ</h2>
+      @if (current(); as a) {
+        <div class="result" [class.fresh]="a.prediction.label === 'fresh'" [class.rotten]="a.prediction.label === 'rotten'">
+          <div>
+            <div class="result-label">{{ a.prediction.label === 'fresh' ? 'Fresh (สด)' : 'Rotten (เน่า)' }}</div>
+            <small>{{ a.name }}</small>
+          </div>
+          <div class="result-conf">
+            <b>{{ a.prediction.confidence | percent: '1.1-1' }}</b>
+            <small>ความมั่นใจ</small>
+          </div>
+        </div>
+        @if (warning(); as w) {
+          <p class="warning">คำเตือน: {{ w }}</p>
+        }
 
-      <div class="two-col">
-        <div>
-          <h3>ข้อมูลของภาพ</h3>
-          <table class="info">
-            <tr><th>พื้นที่ผลไม้</th><td>{{ a.stats.fruitArea | number: '1.1-1' }} %</td></tr>
-            <tr><th>บริเวณสีคล้ำ</th><td>{{ a.stats.darkArea | number: '1.1-1' }} %</td></tr>
-            <tr><th>Otsu threshold (S)</th><td>{{ a.stats.otsuThreshold }}</td></tr>
-            <tr><th>ค่าเฉลี่ย H / S / V</th><td>{{ a.stats.meanH | number: '1.0-0' }} / {{ a.stats.meanS | number: '1.0-0' }} / {{ a.stats.meanV | number: '1.0-0' }}</td></tr>
-            <tr><th>เวลาประมวลผล</th><td>{{ a.elapsed | number: '1.0-0' }} ms</td></tr>
-          </table>
+        <table class="probs">
+          <tr>
+            <td>Fresh</td>
+            <td class="bar-cell"><div class="bar fresh" [style.width.%]="a.prediction.probabilities.fresh * 100"></div></td>
+            <td class="num-col">{{ a.prediction.probabilities.fresh | percent: '1.1-1' }}</td>
+          </tr>
+          <tr>
+            <td>Rotten</td>
+            <td class="bar-cell"><div class="bar rotten" [style.width.%]="a.prediction.probabilities.rotten * 100"></div></td>
+            <td class="num-col">{{ a.prediction.probabilities.rotten | percent: '1.1-1' }}</td>
+          </tr>
+        </table>
+
+        <h3>ขั้นตอน Image Processing</h3>
+        <div class="steps">
+          <figure>
+            <canvas #originalCanvas [width]="imageSize" [height]="imageSize"></canvas>
+            <figcaption>Resize 128x128</figcaption>
+          </figure>
+          <figure>
+            <canvas #maskCanvas [width]="imageSize" [height]="imageSize"></canvas>
+            <figcaption>Otsu (S) + Morphology</figcaption>
+          </figure>
+          <figure>
+            <canvas #maskedCanvas [width]="imageSize" [height]="imageSize"></canvas>
+            <figcaption>Mask ผลไม้</figcaption>
+          </figure>
         </div>
-        <div>
-          <h3>Hue Histogram (เฉพาะผลไม้)</h3>
-          <canvas #hueCanvas class="hue-chart"></canvas>
-          <div class="hue-axis"><span>0</span><span>H</span><span>179</span></div>
+        <label class="check note">
+          <input type="checkbox" [checked]="highlightDark()" (change)="highlightDark.set($any($event.target).checked)" />
+          แสดงบริเวณสีคล้ำ (V &lt; 90) เป็นสีม่วง
+        </label>
+
+        <div class="two-col">
+          <div>
+            <h3>ข้อมูลของภาพ</h3>
+            <table class="info">
+              <tr><th>พื้นที่ผลไม้</th><td>{{ a.stats.fruitArea | number: '1.1-1' }} %</td></tr>
+              <tr><th>บริเวณสีคล้ำ</th><td>{{ a.stats.darkArea | number: '1.1-1' }} %</td></tr>
+              <tr><th>Otsu threshold (S)</th><td>{{ a.stats.otsuThreshold }}</td></tr>
+              <tr><th>ค่าเฉลี่ย H / S / V</th><td>{{ a.stats.meanH | number: '1.0-0' }} / {{ a.stats.meanS | number: '1.0-0' }} / {{ a.stats.meanV | number: '1.0-0' }}</td></tr>
+              <tr><th>เวลาประมวลผล</th><td>{{ a.elapsed | number: '1.0-0' }} ms</td></tr>
+            </table>
+          </div>
+          <div>
+            <h3>Hue Histogram (เฉพาะผลไม้)</h3>
+            <canvas #hueCanvas class="hue-chart"></canvas>
+            <div class="hue-axis"><span>0</span><span>H</span><span>179</span></div>
+          </div>
         </div>
-      </div>
-    } @else {
-      <p class="note">ยังไม่มีผล กรุณาเลือกภาพหรือเปิดกล้อง</p>
-    }
-  </section>
+      } @else {
+        <div class="empty">
+          <p>ยังไม่มีผลการตรวจ</p>
+          <small>เลือกภาพ ใช้ภาพตัวอย่าง หรือเปิดกล้องจากช่องด้านซ้าย</small>
+        </div>
+      }
+    </section>
+  </div>
 
   <!-- History -->
   <section>
-    <h2>3. สรุปผลการตรวจ</h2>
+    <div class="section-head">
+      <h2><span class="num">3</span> สรุปผลการตรวจ</h2>
+      <div class="actions">
+        <button (click)="exportCsv()" [disabled]="!history().length">ดาวน์โหลด CSV</button>
+        <button (click)="clearHistory()" [disabled]="!history().length">ล้างข้อมูล</button>
+      </div>
+    </div>
+
     @let s = summary();
-    <p>
-      ตรวจแล้ว <b>{{ s.total }}</b> ภาพ |
-      Fresh <b class="fresh-text">{{ s.fresh }}</b> |
-      Rotten <b class="rotten-text">{{ s.rotten }}</b> |
-      ความมั่นใจเฉลี่ย <b>{{ s.avgConfidence | percent: '1.0-0' }}</b>
-    </p>
-    <div class="actions">
-      <button (click)="exportCsv()" [disabled]="!history().length">ดาวน์โหลด CSV</button>
-      <button (click)="clearHistory()" [disabled]="!history().length">ล้างข้อมูล</button>
+    <div class="summary">
+      <div><small>ตรวจแล้ว</small><b>{{ s.total }}</b></div>
+      <div><small>Fresh</small><b class="fresh-text">{{ s.fresh }}</b></div>
+      <div><small>Rotten</small><b class="rotten-text">{{ s.rotten }}</b></div>
+      <div><small>ความมั่นใจเฉลี่ย</small><b>{{ s.avgConfidence | percent: '1.0-0' }}</b></div>
     </div>
 
     @if (history().length) {
@@ -173,7 +191,7 @@
                 <td><img [src]="a.thumbnail" alt="" width="36" height="36" /></td>
                 <td class="name">{{ a.name }}</td>
                 <td>{{ a.source === 'camera' ? 'กล้อง' : 'อัปโหลด' }}</td>
-                <td [class.fresh-text]="a.prediction.label === 'fresh'" [class.rotten-text]="a.prediction.label === 'rotten'">{{ a.prediction.label }}</td>
+                <td><span class="label" [class.fresh]="a.prediction.label === 'fresh'" [class.rotten]="a.prediction.label === 'rotten'">{{ a.prediction.label }}</span></td>
                 <td>{{ a.prediction.confidence | percent: '1.0-0' }}</td>
                 <td>{{ a.elapsed | number: '1.0-0' }}</td>
               </tr>
@@ -181,10 +199,13 @@
           </tbody>
         </table>
       </div>
+      <p class="note">คลิกที่แถวเพื่อดูผลของภาพนั้นอีกครั้ง</p>
+    } @else {
+      <p class="note">ยังไม่มีประวัติการตรวจ</p>
     }
   </section>
 </main>
 
 <footer>
-  วิชา Image Processing and Computer Vision
+  วิชา Image Processing and Computer Vision · Resize → HSV → Otsu Threshold → Morphology → HSV Histogram → Random Forest
 </footer>
