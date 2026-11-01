@@ -13,3 +13,6 @@ dataset/
 .idea/
 .DS_Store
 Thumbs.db
+
+# ข้อมูลอ้างอิงที่สร้างจาก src/export_reference.py
+reference/
