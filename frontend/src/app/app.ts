@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, OnDestroy, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { DecimalPipe, PercentPipe } from '@angular/common';
 
 import { FruitStats, computeStats, drawToRgba, maskImage, maskedImage, readImageFile, resizedImage } from './fruit-analysis';
@@ -164,6 +164,7 @@ export class App implements OnDestroy {
     if (failed.length) notes.push(`อ่านไฟล์ไม่ได้ ${failed.length} ไฟล์: ${failed.join(', ')}`);
     if (skipped) notes.push(`ข้ามไฟล์ที่ไม่ใช่ภาพ ${skipped} ไฟล์`);
     this.message.set(notes.length ? notes.join(' / ') : null);
+    if (failed.length < images.length) scrollToResultOnMobile();
   }
 
   protected async loadSample(sample: Sample) {
@@ -175,6 +176,7 @@ export class App implements OnDestroy {
       const blob = await (await fetch(`samples/${sample.file}`)).blob();
       const { data, width, height } = await readImageFile(blob);
       await this.analyze(data, width, height, `ตัวอย่าง: ${sample.label}`, 'upload', t0);
+      scrollToResultOnMobile();
     } catch (e) {
       this.message.set(`โหลดภาพตัวอย่างไม่สำเร็จ: ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -293,6 +295,45 @@ export class App implements OnDestroy {
     this.current.set(a);
   }
 
+  // ---------------- เลื่อนดูผลในประวัติ (ปุ่ม ก่อนหน้า/ถัดไป หรือลูกศรขึ้น/ลง) ----------------
+
+  private currentIndex() {
+    const id = this.current()?.id;
+    return this.history().findIndex((a) => a.id === id);
+  }
+
+  /** ลำดับที่แสดงในรายการประวัติ เช่น "3 / 10" */
+  protected readonly position = computed(() => {
+    const i = this.currentIndex();
+    const n = this.history().length;
+    return i < 0 ? `- / ${n}` : `${n - i} / ${n}`;
+  });
+
+  /** dir = -1 ขึ้นไปรายการบน (ใหม่กว่า), +1 ลงไปรายการล่าง (เก่ากว่า) */
+  protected canStep(dir: -1 | 1) {
+    const i = this.currentIndex();
+    const next = i < 0 ? 0 : i + dir;
+    return next >= 0 && next < this.history().length;
+  }
+
+  protected step(dir: -1 | 1) {
+    if (!this.canStep(dir)) return;
+    const i = this.currentIndex();
+    const a = this.history()[i < 0 ? 0 : i + dir];
+    this.current.set(a);
+    document.querySelector(`.history li[data-id="${a.id}"]`)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  protected onKey(event: KeyboardEvent) {
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest('input, textarea, select')) return;
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.step(event.key === 'ArrowUp' ? -1 : 1);
+    }
+  }
+
   protected clearHistory() {
     this.history.set([]);
     this.current.set(null);
@@ -326,6 +367,13 @@ export class App implements OnDestroy {
 
   ngOnDestroy() {
     this.stopCamera();
+  }
+}
+
+/** บนมือถือช่องผลอยู่ใต้ช่องเลือกภาพ จึงเลื่อนลงไปให้เห็นผลทันที */
+function scrollToResultOnMobile() {
+  if (window.matchMedia('(max-width: 720px)').matches) {
+    setTimeout(() => document.querySelectorAll('.panel')[1]?.scrollIntoView({ block: 'start' }));
   }
 }
 
