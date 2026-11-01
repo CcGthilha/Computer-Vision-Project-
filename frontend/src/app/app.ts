@@ -1,11 +1,272 @@
-import { Component, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { DecimalPipe, PercentPipe } from '@angular/common';
+
+import { FruitStats, computeStats, drawToRgba, maskImage, maskedImage, readImageFile, resizedImage } from './fruit-analysis';
+import { H_BINS, IMAGE_SIZE, ProcessedImage, processImage } from './hsv-processing';
+import { ModelInference, Prediction } from './model-inference';
+
+interface Analysis {
+  id: number;
+  name: string;
+  source: 'upload' | 'camera';
+  thumbnail: string;
+  processed: ProcessedImage;
+  stats: FruitStats;
+  prediction: Prediction;
+  /** เวลาประมวลผลทั้งหมด (ms) */
+  elapsed: number;
+}
+
+const LIVE_INTERVAL_MS = 500;
+const MAX_HISTORY = 100;
 
 @Component({
-  imports: [],
   selector: 'app-root',
-  styleUrl: './app.css',
+  imports: [DecimalPipe, PercentPipe],
   templateUrl: './app.html',
 })
-export class App {
-  protected readonly title = signal('frontend');
+export class App implements OnDestroy {
+  protected readonly model = inject(ModelInference);
+
+  protected readonly mode = signal<'upload' | 'camera'>('upload');
+  protected readonly busy = signal(false);
+  protected readonly dragging = signal(false);
+  protected readonly highlightDark = signal(true);
+  protected readonly history = signal<Analysis[]>([]);
+  protected readonly current = signal<Analysis | null>(null);
+  protected readonly message = signal<string | null>(null);
+
+  protected readonly cameraOn = signal(false);
+  protected readonly live = signal(false);
+
+  protected readonly summary = computed(() => {
+    const items = this.history();
+    const fresh = items.filter((a) => a.prediction.label === 'fresh').length;
+    const avg = (f: (a: Analysis) => number) => (items.length ? items.reduce((s, a) => s + f(a), 0) / items.length : 0);
+    return {
+      total: items.length,
+      fresh,
+      rotten: items.length - fresh,
+      freshRatio: items.length ? fresh / items.length : 0,
+      avgConfidence: avg((a) => a.prediction.confidence),
+      avgTime: avg((a) => a.elapsed),
+    };
+  });
+
+  protected readonly imageSize = IMAGE_SIZE;
+
+  private readonly originalCanvas = viewChild<ElementRef<HTMLCanvasElement>>('originalCanvas');
+  private readonly maskCanvas = viewChild<ElementRef<HTMLCanvasElement>>('maskCanvas');
+  private readonly maskedCanvas = viewChild<ElementRef<HTMLCanvasElement>>('maskedCanvas');
+  private readonly hueCanvas = viewChild<ElementRef<HTMLCanvasElement>>('hueCanvas');
+  private readonly video = viewChild<ElementRef<HTMLVideoElement>>('video');
+
+  private stream: MediaStream | null = null;
+  private liveTimer: ReturnType<typeof setInterval> | null = null;
+  private nextId = 1;
+
+  constructor() {
+    effect(() => {
+      const a = this.current();
+      const canvases = [this.originalCanvas(), this.maskCanvas(), this.maskedCanvas(), this.hueCanvas()];
+      if (!a || canvases.some((c) => !c)) return;
+      const [orig, mask, masked, hue] = canvases.map((c) => c!.nativeElement);
+      orig.getContext('2d')!.putImageData(resizedImage(a.processed), 0, 0);
+      mask.getContext('2d')!.putImageData(maskImage(a.processed), 0, 0);
+      masked.getContext('2d')!.putImageData(maskedImage(a.processed, this.highlightDark()), 0, 0);
+      drawHueHistogram(hue, a.stats.hueHistogram);
+    });
+  }
+
+  // ---------------- Upload ----------------
+
+  protected onFileInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.analyzeFiles(Array.from(input.files ?? []));
+    input.value = '';
+  }
+
+  protected onDrop(event: DragEvent) {
+    event.preventDefault();
+    this.dragging.set(false);
+    this.analyzeFiles(Array.from(event.dataTransfer?.files ?? []));
+  }
+
+  protected onDragOver(event: DragEvent) {
+    event.preventDefault();
+    this.dragging.set(true);
+  }
+
+  private async analyzeFiles(files: File[]) {
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    if (!images.length) {
+      this.message.set('กรุณาเลือกไฟล์ภาพ (jpg, png, webp)');
+      return;
+    }
+    this.message.set(null);
+    this.busy.set(true);
+    try {
+      for (const file of images) {
+        const t0 = performance.now();
+        const { data, width, height } = await readImageFile(file);
+        await this.analyze(data, width, height, file.name, 'upload', t0);
+      }
+    } catch (e) {
+      this.message.set(`ประมวลผลไม่สำเร็จ: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  // ---------------- Camera ----------------
+
+  protected async startCamera() {
+    this.message.set(null);
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
+      });
+      this.cameraOn.set(true);
+      queueMicrotask(() => {
+        const v = this.video()?.nativeElement;
+        if (v) {
+          v.srcObject = this.stream;
+          v.play();
+        }
+      });
+    } catch (e) {
+      this.message.set(`เปิดกล้องไม่ได้: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  protected stopCamera() {
+    this.setLive(false);
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    this.cameraOn.set(false);
+  }
+
+  protected async capture(record = true) {
+    const v = this.video()?.nativeElement;
+    if (!v || !v.videoWidth || this.busy()) return;
+    this.busy.set(true);
+    try {
+      const t0 = performance.now();
+      // ครอปตรงกลางเป็นสี่เหลี่ยมจัตุรัส เหมือนภาพใน dataset
+      const side = Math.min(v.videoWidth, v.videoHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = side;
+      canvas.getContext('2d')!.drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, side, side);
+      const { data } = drawToRgba(canvas, side, side);
+      await this.analyze(data, side, side, `camera-${new Date().toLocaleTimeString('th-TH')}`, 'camera', t0, record);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  protected setLive(on: boolean) {
+    this.live.set(on);
+    if (this.liveTimer) clearInterval(this.liveTimer);
+    this.liveTimer = on ? setInterval(() => this.capture(false), LIVE_INTERVAL_MS) : null;
+  }
+
+  protected switchMode(mode: 'upload' | 'camera') {
+    if (mode === 'upload') this.stopCamera();
+    this.mode.set(mode);
+  }
+
+  // ---------------- Pipeline ----------------
+
+  private async analyze(
+    data: Uint8ClampedArray,
+    width: number,
+    height: number,
+    name: string,
+    source: Analysis['source'],
+    t0: number,
+    record = true,
+  ) {
+    const processed = processImage(data, width, height);
+    const prediction = await this.model.predict(processed.features);
+    const analysis: Analysis = {
+      id: this.nextId++,
+      name,
+      source,
+      thumbnail: record ? thumbnail(processed) : '',
+      processed,
+      stats: computeStats(processed),
+      prediction,
+      elapsed: performance.now() - t0,
+    };
+    this.current.set(analysis);
+    if (record) this.history.update((h) => [analysis, ...h].slice(0, MAX_HISTORY));
+  }
+
+  protected select(a: Analysis) {
+    this.current.set(a);
+  }
+
+  protected clearHistory() {
+    this.history.set([]);
+    this.current.set(null);
+  }
+
+  protected exportCsv() {
+    const rows = [['name', 'source', 'prediction', 'p_fresh', 'p_rotten', 'fruit_area_pct', 'dark_area_pct', 'mean_h', 'mean_s', 'mean_v', 'time_ms']];
+    for (const a of [...this.history()].reverse()) {
+      rows.push([
+        a.name,
+        a.source,
+        a.prediction.label,
+        a.prediction.probabilities.fresh.toFixed(4),
+        a.prediction.probabilities.rotten.toFixed(4),
+        a.stats.fruitArea.toFixed(2),
+        a.stats.darkArea.toFixed(2),
+        a.stats.meanH.toFixed(1),
+        a.stats.meanS.toFixed(1),
+        a.stats.meanV.toFixed(1),
+        a.elapsed.toFixed(1),
+      ]);
+    }
+    const csv = rows.map((r) => r.map((c) => `"${c.replaceAll('"', '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'fruit-freshness-results.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  ngOnDestroy() {
+    this.stopCamera();
+  }
+}
+
+function thumbnail(p: ProcessedImage): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = IMAGE_SIZE;
+  canvas.getContext('2d')!.putImageData(resizedImage(p), 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.8);
+}
+
+/** กราฟแท่ง Hue histogram ระบายสีตามค่า Hue จริง */
+function drawHueHistogram(canvas: HTMLCanvasElement, hist: number[]) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 320;
+  const h = canvas.clientHeight || 120;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  const max = Math.max(...hist, 1e-6);
+  const bw = w / H_BINS;
+  hist.forEach((v, i) => {
+    const bh = (v / max) * (h - 4);
+    ctx.fillStyle = `hsl(${((i + 0.5) * 360) / H_BINS}, 75%, 50%)`;
+    ctx.beginPath();
+    ctx.roundRect(i * bw + 1, h - bh, bw - 2, bh, [2, 2, 0, 0]);
+    ctx.fill();
+  });
 }
