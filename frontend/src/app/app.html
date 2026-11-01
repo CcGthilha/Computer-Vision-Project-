@@ -28,32 +28,46 @@
         (dragleave)="dragging.set(false)"
         (drop)="onDrop($event)"
       >
-        <input type="file" accept="image/*" multiple (change)="onFileInput($event)" hidden />
+        <input type="file" accept="image/*" multiple (change)="onFileInput($event)" [disabled]="busy()" hidden />
         คลิกเพื่อเลือกไฟล์ หรือลากภาพมาวางที่นี่ (เลือกได้หลายภาพ)
-        <small>ภาพผลไม้บนพื้นหลังสีอ่อนจะได้ผลดีที่สุด</small>
+        <small>ภาพผลไม้ 1 ผลบนพื้นหลังสีอ่อนจะได้ผลดีที่สุด</small>
       </label>
+
+      <p class="samples-title">หรือลองใช้ภาพตัวอย่าง:</p>
+      <div class="samples">
+        @for (s of samples; track s.file) {
+          <button class="sample" (click)="loadSample(s)" [disabled]="busy()" [title]="s.label">
+            <img [src]="'samples/' + s.file" [alt]="s.label" width="64" height="64" />
+            <span>{{ s.label }}</span>
+          </button>
+        }
+      </div>
     } @else {
       @if (cameraOn()) {
         <div class="video-wrap">
           <video #video playsinline muted></video>
           <div class="crop-guide"></div>
         </div>
-        <p class="note">ระบบจะใช้เฉพาะส่วนในกรอบสี่เหลี่ยม</p>
+        <p class="note">วางผลไม้ให้อยู่ในกรอบสีเหลือง ระบบจะใช้เฉพาะส่วนในกรอบ</p>
         <div class="actions">
-          <button (click)="capture()" [disabled]="busy() || live()">ถ่ายภาพและตรวจ</button>
+          <button (click)="capture()" [disabled]="busy()">{{ live() ? 'บันทึกผลนี้' : 'ถ่ายภาพและตรวจ' }}</button>
           <label>
             <input type="checkbox" [checked]="live()" (change)="setLive($any($event.target).checked)" />
-            ตรวจต่อเนื่อง
+            ตรวจต่อเนื่อง (ทุก 0.5 วินาที)
           </label>
           <button (click)="stopCamera()">ปิดกล้อง</button>
         </div>
+        @if (live()) {
+          <p class="note">กำลังตรวจต่อเนื่อง ผลด้านล่างจะอัปเดตอัตโนมัติ กด "บันทึกผลนี้" เพื่อเก็บลงตารางสรุป</p>
+        }
       } @else {
+        <p class="note">ต้องอนุญาตให้เบราว์เซอร์ใช้กล้องก่อน</p>
         <button (click)="startCamera()">เปิดกล้อง</button>
       }
     }
 
     @if (busy()) {
-      <p class="note">กำลังประมวลผล...</p>
+      <p class="note">กำลังประมวลผล... {{ progress() }}</p>
     }
     @if (message(); as msg) {
       <p class="error">{{ msg }}</p>
@@ -72,6 +86,9 @@
         <div>ความมั่นใจ {{ a.prediction.confidence | percent: '1.1-1' }}</div>
         <small>{{ a.name }}</small>
       </div>
+      @if (warning(); as w) {
+        <p class="warning">คำเตือน: {{ w }}</p>
+      }
 
       <table class="probs">
         <tr>

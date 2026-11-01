@@ -17,8 +17,23 @@ interface Analysis {
   elapsed: number;
 }
 
+interface Sample {
+  file: string;
+  label: string;
+}
+
 const LIVE_INTERVAL_MS = 500;
 const MAX_HISTORY = 100;
+
+/** ภาพตัวอย่างจาก test set (frontend/public/samples) */
+const SAMPLES: Sample[] = [
+  { file: 'fresh_peach.jpg', label: 'ลูกพีช (สด)' },
+  { file: 'rotten_peach.jpg', label: 'ลูกพีช (เน่า)' },
+  { file: 'fresh_pomegranate.jpg', label: 'ทับทิม (สด)' },
+  { file: 'rotten_pomegranate.jpg', label: 'ทับทิม (เน่า)' },
+  { file: 'fresh_strawberry.jpg', label: 'สตรอว์เบอร์รี (สด)' },
+  { file: 'rotten_strawberry.jpg', label: 'สตรอว์เบอร์รี (เน่า)' },
+];
 
 @Component({
   selector: 'app-root',
@@ -35,9 +50,20 @@ export class App implements OnDestroy {
   protected readonly history = signal<Analysis[]>([]);
   protected readonly current = signal<Analysis | null>(null);
   protected readonly message = signal<string | null>(null);
+  protected readonly progress = signal('');
+  protected readonly samples = SAMPLES;
 
   protected readonly cameraOn = signal(false);
   protected readonly live = signal(false);
+
+  /** เตือนเมื่อแยกผลไม้ออกจากพื้นหลังได้ไม่ดี (ผลอาจไม่น่าเชื่อถือ) */
+  protected readonly warning = computed(() => {
+    const a = this.current();
+    if (!a) return null;
+    if (a.stats.fruitArea < 3) return 'ตรวจไม่พบผลไม้ชัดเจนในภาพ ผลการทำนายอาจไม่ถูกต้อง';
+    if (a.stats.fruitArea > 90) return 'แยกผลไม้ออกจากพื้นหลังไม่ได้ (ควรถ่ายบนพื้นหลังสีอ่อนและเห็นผลไม้ทั้งผล)';
+    return null;
+  });
 
   protected readonly summary = computed(() => {
     const items = this.history();
@@ -63,9 +89,19 @@ export class App implements OnDestroy {
 
   private stream: MediaStream | null = null;
   private liveTimer: ReturnType<typeof setInterval> | null = null;
+  private liveRunning = false;
   private nextId = 1;
 
   constructor() {
+    // ต่อกล้องเข้ากับ <video> หลังจาก element ถูกสร้างแล้ว
+    effect(() => {
+      const v = this.video()?.nativeElement;
+      if (v && this.cameraOn() && this.stream && v.srcObject !== this.stream) {
+        v.srcObject = this.stream;
+        v.play().catch(() => {});
+      }
+    });
+
     effect(() => {
       const a = this.current();
       const canvases = [this.originalCanvas(), this.maskCanvas(), this.maskedCanvas(), this.hueCanvas()];
@@ -98,21 +134,49 @@ export class App implements OnDestroy {
   }
 
   private async analyzeFiles(files: File[]) {
+    if (this.busy()) return;
     const images = files.filter((f) => f.type.startsWith('image/'));
+    const skipped = files.length - images.length;
     if (!images.length) {
-      this.message.set('กรุณาเลือกไฟล์ภาพ (jpg, png, webp)');
+      this.message.set('ไฟล์ที่เลือกไม่ใช่ภาพ กรุณาเลือกไฟล์ jpg, png หรือ webp');
       return;
     }
     this.message.set(null);
     this.busy.set(true);
+    const failed: string[] = [];
     try {
-      for (const file of images) {
-        const t0 = performance.now();
-        const { data, width, height } = await readImageFile(file);
-        await this.analyze(data, width, height, file.name, 'upload', t0);
+      for (const [i, file] of images.entries()) {
+        this.progress.set(images.length > 1 ? `${i + 1}/${images.length}` : '');
+        try {
+          const t0 = performance.now();
+          const { data, width, height } = await readImageFile(file);
+          await this.analyze(data, width, height, file.name, 'upload', t0);
+        } catch (e) {
+          console.error(file.name, e);
+          failed.push(file.name);
+        }
       }
+    } finally {
+      this.busy.set(false);
+      this.progress.set('');
+    }
+    const notes = [];
+    if (failed.length) notes.push(`อ่านไฟล์ไม่ได้ ${failed.length} ไฟล์: ${failed.join(', ')}`);
+    if (skipped) notes.push(`ข้ามไฟล์ที่ไม่ใช่ภาพ ${skipped} ไฟล์`);
+    this.message.set(notes.length ? notes.join(' / ') : null);
+  }
+
+  protected async loadSample(sample: Sample) {
+    if (this.busy()) return;
+    this.busy.set(true);
+    this.message.set(null);
+    try {
+      const t0 = performance.now();
+      const blob = await (await fetch(`samples/${sample.file}`)).blob();
+      const { data, width, height } = await readImageFile(blob);
+      await this.analyze(data, width, height, `ตัวอย่าง: ${sample.label}`, 'upload', t0);
     } catch (e) {
-      this.message.set(`ประมวลผลไม่สำเร็จ: ${e instanceof Error ? e.message : e}`);
+      this.message.set(`โหลดภาพตัวอย่างไม่สำเร็จ: ${e instanceof Error ? e.message : e}`);
     } finally {
       this.busy.set(false);
     }
@@ -122,21 +186,25 @@ export class App implements OnDestroy {
 
   protected async startCamera() {
     this.message.set(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      this.message.set('เบราว์เซอร์นี้ใช้กล้องไม่ได้ (ต้องเปิดผ่าน https หรือ localhost)');
+      return;
+    }
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false,
       });
       this.cameraOn.set(true);
-      queueMicrotask(() => {
-        const v = this.video()?.nativeElement;
-        if (v) {
-          v.srcObject = this.stream;
-          v.play();
-        }
-      });
     } catch (e) {
-      this.message.set(`เปิดกล้องไม่ได้: ${e instanceof Error ? e.message : e}`);
+      const name = e instanceof DOMException ? e.name : '';
+      this.message.set(
+        name === 'NotAllowedError'
+          ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง กรุณากดอนุญาตในเบราว์เซอร์'
+          : name === 'NotFoundError'
+            ? 'ไม่พบกล้องในเครื่องนี้'
+            : `เปิดกล้องไม่ได้: ${e instanceof Error ? e.message : e}`,
+      );
     }
   }
 
@@ -147,28 +215,46 @@ export class App implements OnDestroy {
     this.cameraOn.set(false);
   }
 
-  protected async capture(record = true) {
-    const v = this.video()?.nativeElement;
-    if (!v || !v.videoWidth || this.busy()) return;
+  /** ถ่ายภาพจากกล้องแล้วตรวจ และบันทึกลงประวัติ */
+  protected async capture() {
+    if (this.busy()) return;
     this.busy.set(true);
     try {
-      const t0 = performance.now();
-      // ครอปตรงกลางเป็นสี่เหลี่ยมจัตุรัส เหมือนภาพใน dataset
-      const side = Math.min(v.videoWidth, v.videoHeight);
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = side;
-      canvas.getContext('2d')!.drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, side, side);
-      const { data } = drawToRgba(canvas, side, side);
-      await this.analyze(data, side, side, `camera-${new Date().toLocaleTimeString('th-TH')}`, 'camera', t0, record);
+      await this.analyzeFrame(true);
     } finally {
       this.busy.set(false);
     }
   }
 
+  private async analyzeFrame(record: boolean) {
+    const v = this.video()?.nativeElement;
+    if (!v || !v.videoWidth) return;
+    const t0 = performance.now();
+    // ครอปตรงกลางเป็นสี่เหลี่ยมจัตุรัส เหมือนภาพใน dataset
+    const side = Math.min(v.videoWidth, v.videoHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = side;
+    canvas.getContext('2d')!.drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, side, side);
+    const { data } = drawToRgba(canvas, side, side);
+    const name = `กล้อง ${new Date().toLocaleTimeString('th-TH')}`;
+    await this.analyze(data, side, side, record ? name : 'กล้อง (ตรวจต่อเนื่อง)', 'camera', t0, record);
+  }
+
+  /** โหมดตรวจต่อเนื่อง: อัปเดตผลทุก 0.5 วินาที แต่ไม่บันทึกลงประวัติ (กด "บันทึกผล" เพื่อบันทึก) */
   protected setLive(on: boolean) {
     this.live.set(on);
     if (this.liveTimer) clearInterval(this.liveTimer);
-    this.liveTimer = on ? setInterval(() => this.capture(false), LIVE_INTERVAL_MS) : null;
+    this.liveTimer = null;
+    if (!on) return;
+    this.liveTimer = setInterval(async () => {
+      if (this.liveRunning || this.busy()) return;
+      this.liveRunning = true;
+      try {
+        await this.analyzeFrame(false);
+      } finally {
+        this.liveRunning = false;
+      }
+    }, LIVE_INTERVAL_MS);
   }
 
   protected switchMode(mode: 'upload' | 'camera') {
