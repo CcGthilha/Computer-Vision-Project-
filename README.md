@@ -20,8 +20,8 @@
 
 | รายการ | รายละเอียด |
 |---|---|
-| ชื่อ Dataset | Fresh and Rotten Fruits |
-| แหล่งข้อมูล | Kaggle (TODO: ใส่ลิงก์ dataset ที่ใช้จริง) |
+| ชื่อ Dataset | Fruits Dataset for Classification (Version 1, 2025) |
+| แหล่งข้อมูล | Mendeley Data: <https://data.mendeley.com/datasets/rg254yr63x/1> (DOI: [10.17632/rg254yr63x.1](https://doi.org/10.17632/rg254yr63x.1), License: Apache-2.0) |
 | ผลไม้ | ลูกพีช (peach), ทับทิม (pomegranate), สตรอว์เบอร์รี (strawberry) |
 | จำนวน Class | 2 (Fresh / Rotten) |
 | ขนาดภาพ | 300 × 300 px (JPG) |
@@ -34,6 +34,8 @@
 | Test | 123 | 128 | 251 | 15% |
 
 จำนวนภาพแยกตามชนิดผลไม้: fresh peaches 250, fresh pomegranates 311, fresh strawberries 250, rotten peaches 343, rotten pomegranates 250, rotten strawberries 251
+
+> หน้า dataset ระบุว่ามีชนิดละประมาณ 250 ภาพ (รวม 1,500 ภาพ) แต่ไฟล์ที่ดาวน์โหลดมาใช้จริงมี 1,655 ภาพตามตารางด้านบน
 
 โครงสร้างโฟลเดอร์ (ไม่ได้อัปโหลด dataset ขึ้น GitHub):
 
