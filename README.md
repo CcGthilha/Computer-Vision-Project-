@@ -4,6 +4,8 @@
 
 วิชา Image Processing and Computer Vision | ระยะเวลาโครงงาน 3 สัปดาห์
 
+**ลองใช้งานเว็บ:** <https://computer-vision-project-one.vercel.app> · **วิดีโอสาธิต:** <https://www.youtube.com/watch?v=sG47T_yGzds>
+
 ![Application Screenshot](images/result.jpg)
 
 ## Problem & Objective
@@ -36,6 +38,8 @@
 จำนวนภาพแยกตามชนิดผลไม้: fresh peaches 250, fresh pomegranates 311, fresh strawberries 250, rotten peaches 343, rotten pomegranates 250, rotten strawberries 251
 
 > หน้า dataset ระบุว่ามีชนิดละประมาณ 250 ภาพ (รวม 1,500 ภาพ) แต่ไฟล์ที่ดาวน์โหลดมาใช้จริงมี 1,655 ภาพตามตารางด้านบน
+
+**การเตรียมข้อมูล:** ไฟล์ที่ดาวน์โหลดมาเป็น zip ซ้อน 2 ชั้น แตกแล้วได้ 6 โฟลเดอร์ตามชนิดผลไม้ จากนั้นใช้ `src/split_dataset.py` รวมโฟลเดอร์ fresh_* เป็นคลาส Fresh และ rotten_* เป็นคลาส Rotten แล้วสุ่มแบ่ง 70/15/15 ทีละโฟลเดอร์ (ให้ผลไม้ทุกชนิดกระจายอยู่ในทุก split) ด้วย `random seed = 42` ตรวจแล้วไม่มีภาพเสีย และทุกภาพขนาด 300×300 เท่ากัน
 
 โครงสร้างโฟลเดอร์ (ไม่ได้อัปโหลด dataset ขึ้น GitHub):
 
@@ -81,6 +85,20 @@ Dataset → Resize 128×128 → HSV Color Space → Otsu Threshold (S channel) �
 | Scaling | `StandardScaler` |
 | ไฟล์โมเดล | `models/model.pkl` (Python), `frontend/public/model.onnx` (เบราว์เซอร์) |
 
+### เปรียบเทียบโมเดล
+
+ใช้ feature ชุดเดียวกัน เทียบ SVM กับ Random Forest และลอง Random Forest แบบไม่ใช้ mask (คิด histogram ทั้งภาพรวมพื้นหลัง) เพื่อดูผลของการตัดพื้นหลัง (รันซ้ำได้ด้วย `src/compare_models.py`)
+
+| โมเดล | ใช้ mask | Val Accuracy | Test Accuracy | Test F1 (Rotten) |
+|---|:---:|---:|---:|---:|
+| SVM (RBF, C = 1) | ใช้ | 0.8866 | 0.8367 | 0.8487 |
+| SVM (RBF, C = 10) | ใช้ | 0.8907 | 0.8645 | 0.8768 |
+| Random Forest | ไม่ใช้ | 0.9150 | 0.9004 | 0.9057 |
+| **Random Forest** | **ใช้** | **0.9231** | 0.8964 | 0.9008 |
+
+- Random Forest ดีกว่า SVM ชัดเจน จึงเลือกเป็นโมเดลหลัก
+- แบบใช้ mask ดีกว่าบน Validation set แต่บน Test set แบบไม่ใช้ mask สูงกว่าเล็กน้อย (ต่างกัน 1 ภาพ) แปลว่าใน dataset นี้ mask ช่วยไม่มากเพราะภาพส่วนใหญ่พื้นหลังขาวอยู่แล้ว แต่ยังเลือกใช้ mask เพราะทำให้ histogram มาจากสีของผลไม้จริง ซึ่งสำคัญกับภาพถ่ายจริงที่พื้นหลังไม่ใช่สีขาว
+
 ## Evaluation
 
 ผลบน **Test set** (251 ภาพ ซึ่งโมเดลไม่เคยเห็นตอน train):
@@ -107,7 +125,7 @@ Dataset → Resize 128×128 → HSV Color Space → Otsu Threshold (S channel) �
 
 ## Application
 
-Web Application ทำด้วย **Angular** แบบ **Client-side Inference** ไม่มี Backend API ภาพของผู้ใช้จึงไม่ถูกส่งออกจากเครื่อง
+Web Application ทำด้วย **Angular** แบบ **Client-side Inference** ไม่มี Backend API ภาพของผู้ใช้จึงไม่ถูกส่งออกจากเครื่อง ใช้งานได้ที่ <https://computer-vision-project-one.vercel.app> (deploy บน Vercel)
 
 - **Upload ภาพ**: ลากมาวางหรือคลิกเลือก ได้หลายภาพพร้อมกัน
 - **กล้อง**: ถ่ายแล้ววิเคราะห์ หรือเปิดโหมด Live ที่วิเคราะห์ทุก 0.5 วินาที
@@ -141,6 +159,8 @@ fruit-freshness-detection/
 │   ├── dataset.py                     # โหลด dataset
 │   ├── classification.py              # Train Random Forest
 │   ├── evaluate.py                    # Accuracy / Precision / Recall / F1 / Confusion Matrix
+│   ├── compare_models.py              # เทียบ SVM / Random Forest แบบใช้และไม่ใช้ mask
+│   ├── split_dataset.py               # รวมเป็น 2 คลาส + แบ่ง Train/Val/Test (70/15/15, seed 42)
 │   ├── export_onnx.py                 # sklearn → ONNX
 │   └── export_reference.py            # ข้อมูลอ้างอิงสำหรับ verify-features
 ├── models/model.pkl
@@ -166,7 +186,10 @@ pip install -r requirements.txt
 python src/evaluate.py          # ประเมินผล models/model.pkl → results/
 python src/export_onnx.py       # แปลงเป็น frontend/public/model.onnx
 python src/classification.py    # (ไม่บังคับ) train ใหม่ → models/model_new.pkl
+python src/compare_models.py    # (ไม่บังคับ) เทียบ SVM / Random Forest แบบใช้และไม่ใช้ mask
 ```
+
+ถ้าเริ่มจากไฟล์ที่ดาวน์โหลดจาก Mendeley: แตก zip ทั้ง 2 ชั้นไว้ในโฟลเดอร์ `Fruits Dataset for Classification/` แล้วรัน `python src/split_dataset.py` จะได้โฟลเดอร์ `dataset/` ที่แบ่งแล้ว
 
 ### 2. Angular Web Application
 
@@ -204,7 +227,7 @@ node scripts/verify-features.mts ../reference
 
 ## Results
 
-- ระบบจำแนกผลไม้สด/เน่าบน Test set ได้ **Accuracy 89.6%** และ F1-score 0.896 โดยใช้เพียง feature สีจาก HSV Histogram ร่วมกับ Random Forest
+- ระบบจำแนกผลไม้สด/เน่าบน Test set ได้ **Accuracy 89.6%** และ F1-score 0.896 โดยใช้เพียง feature สีจาก HSV Histogram ร่วมกับ Random Forest ดีกว่า SVM (86.5%)
 - Image Processing (HSV + Otsu + Morphology) แยกผลไม้ออกจากพื้นหลังสีอ่อนได้ดี ทำให้ histogram สะท้อนสีของผลไม้จริง ไม่ปนกับสีพื้นหลัง
 - Web Application ทำงานในเบราว์เซอร์ทั้งหมด ประมวลผลภาพละประมาณ 30–70 ms และให้ผลตรงกับ Python ทุกภาพ
 
@@ -230,9 +253,9 @@ node scripts/verify-features.mts ../reference
 
 ### Task Division
 
-| ส่วนงาน | งานที่ทำ | Deliverable |
-|---|---|---|
-| Dataset & Data Preparation | หา/ดาวน์โหลด dataset, ทำความสะอาดข้อมูล, แบ่ง Train/Val/Test, สรุปข้อมูลลง README | Dataset พร้อมใช้ + เอกสารสรุป |
-| Image Processing & Feature Extraction | HSV conversion, Otsu Thresholding, Morphology, สกัด HSV Histogram | `src/preprocessing.py`, `src/feature_extraction.py` |
-| Model Training & Evaluation | Train Random Forest, ประเมินผล (accuracy, precision, recall, F1, confusion matrix) | `src/classification.py`, `src/evaluate.py`, `models/model.pkl`, `results/` |
-| Angular Web App (Client-side Inference) | แปลงโมเดลเป็น ONNX, เขียน Angular app, จัดการ GitHub/README, อัดวิดีโอ demo | `frontend/`, `model.onnx`, วิดีโอ demo |
+| ผู้รับผิดชอบ | ส่วนงาน | งานที่ทำ | Deliverable |
+|---|---|---|---|
+| อภิรักษ์ ยะมะหาร | Dataset & Data Preparation | หา/ดาวน์โหลด dataset, ทำความสะอาดข้อมูล, แบ่ง Train/Val/Test, สรุปข้อมูลลง README | `src/split_dataset.py`, Dataset พร้อมใช้ + เอกสารสรุป |
+| ปารเมศ ศรีจันทร์ชัย | Image Processing & Feature Extraction | HSV conversion, Otsu Thresholding, Morphology, สกัด HSV Histogram | `src/preprocessing.py`, `src/feature_extraction.py` |
+| ธีรพงศ์ เพ็งแข | Model Training & Evaluation | Train Random Forest, เทียบกับ SVM, ประเมินผล (accuracy, precision, recall, F1, confusion matrix) | `src/classification.py`, `src/evaluate.py`, `src/compare_models.py`, `models/model.pkl`, `results/` |
+| ช่อทิพย์ ลือจันดา | Angular Web App (Client-side Inference) | แปลงโมเดลเป็น ONNX, เขียน Angular app, จัดการ GitHub/README, อัดวิดีโอ demo | `frontend/`, `model.onnx`, วิดีโอ demo |
