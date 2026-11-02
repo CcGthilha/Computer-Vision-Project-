@@ -146,7 +146,6 @@ fruit-freshness-detection/
 ├── models/model.pkl
 ├── images/                            # preprocessing_steps.png, result.jpg
 ├── results/                           # confusion_matrix.png, classification_report.png, metrics.json
-├── demo/                              # demo.mp4
 ├── requirements.txt
 └── README.md
 ```
@@ -218,15 +217,22 @@ node scripts/verify-features.mts ../reference
 
 ## Demo
 
-> TODO: แนบลิงก์หรือไฟล์ `demo/demo.mp4`
+วิดีโอสาธิตการใช้งาน: <https://www.youtube.com/watch?v=sG47T_yGzds>
 
-## Team & Task Division
+## Team
 
-| คนที่ | หน้าที่ | งานที่ต้องทำ | Deliverable |
-|---|---|---|---|
-| 1 | Dataset & Data Preparation | หา/ดาวน์โหลด dataset, ทำความสะอาดข้อมูล, แบ่ง Train/Val/Test, สรุปข้อมูลลง README | Dataset พร้อมใช้ + เอกสารสรุป |
-| 2 | Image Processing & Feature Extraction | HSV conversion, Otsu Thresholding, Morphology, สกัด HSV Histogram | `src/preprocessing.py`, `src/feature_extraction.py` |
-| 3 | Model Training & Evaluation | Train Random Forest, ประเมินผล (accuracy, precision, recall, F1, confusion matrix) | `src/classification.py`, `src/evaluate.py`, `models/model.pkl`, `results/` |
-| 4 | Angular Web App (Client-side Inference) | แปลงโมเดลเป็น ONNX, เขียน Angular app, จัดการ GitHub/README, อัดวิดีโอ demo | `frontend/`, `model.onnx`, `demo/demo.mp4` |
+| รหัสนิสิต | ชื่อ - นามสกุล |
+|---|---|
+| 67011212113 | ช่อทิพย์ ลือจันดา |
+| 67011212073 | อภิรักษ์ ยะมะหาร |
+| 66011212101 | ธีรพงศ์ เพ็งแข |
+| 66011212242 | ปารเมศ ศรีจันทร์ชัย |
 
-> TODO: ใส่รายชื่อสมาชิกกลุ่มจริงแทนลำดับ 1-4
+### Task Division
+
+| ส่วนงาน | งานที่ทำ | Deliverable |
+|---|---|---|
+| Dataset & Data Preparation | หา/ดาวน์โหลด dataset, ทำความสะอาดข้อมูล, แบ่ง Train/Val/Test, สรุปข้อมูลลง README | Dataset พร้อมใช้ + เอกสารสรุป |
+| Image Processing & Feature Extraction | HSV conversion, Otsu Thresholding, Morphology, สกัด HSV Histogram | `src/preprocessing.py`, `src/feature_extraction.py` |
+| Model Training & Evaluation | Train Random Forest, ประเมินผล (accuracy, precision, recall, F1, confusion matrix) | `src/classification.py`, `src/evaluate.py`, `models/model.pkl`, `results/` |
+| Angular Web App (Client-side Inference) | แปลงโมเดลเป็น ONNX, เขียน Angular app, จัดการ GitHub/README, อัดวิดีโอ demo | `frontend/`, `model.onnx`, วิดีโอ demo |
